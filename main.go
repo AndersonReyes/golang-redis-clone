@@ -1,41 +1,78 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"strings"
+    "sync"
+	// "strings"
 )
 
-func HandlePingCommand(request string) string {
-	return "PONG"
+type SetRequest struct {
+	Key   string
+	Value string
 }
 
-func HandleConnection(w http.ResponseWriter, r *http.Request) {
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	command := string(body)
-	var res string
-
-	if strings.HasPrefix(command, "PING") {
-		res = HandlePingCommand(command)
-	} else {
-		res = "error unrecognized command"
-	}
-
-	fmt.Fprintf(w, "%s", res)
+type GetRequest struct {
+	Key   string
 }
+
+type Database struct {
+    mu sync.Mutex
+    Values map[string]string
+}
+
+var db Database
+
+func PingPong(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "PONG\r\n")
+}
+
+func Set(w http.ResponseWriter, r *http.Request) {
+    db.mu.Lock()
+    defer db.mu.Unlock()
+
+	var body SetRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+    db.Values[body.Key] = body.Value
+	fmt.Fprintf(w, "Set: %s\r\n", body.Key)
+}
+
+func Get(w http.ResponseWriter, r *http.Request) {
+    db.mu.Lock()
+    defer db.mu.Unlock()
+
+	var body GetRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+    res := db.Values[body.Key]
+	fmt.Fprintf(w, "Get: %s\r\n", res)
+}
+
+func SetUpRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/ping", PingPong)
+	mux.HandleFunc("/set", Set)
+	mux.HandleFunc("/get", Get)
+}
+
+func InitDb() {
+    db = Database{Values: make(map[string]string)}
+}
+
 
 func main() {
-	fmt.Println("Hello, world.")
+    InitDb()
+	fmt.Println(db.Values)
 	mux := http.NewServeMux()
-
-	mux.HandleFunc("/", HandleConnection)
-
+    SetUpRoutes(mux)
 	err := http.ListenAndServe(":7777", mux)
 	log.Fatal(err)
 }
