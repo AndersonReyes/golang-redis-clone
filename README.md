@@ -1,2 +1,1 @@
-# golang-redis-clone
-basic redis clone in go
+Simple kv store using mutex and golang ServeMux
